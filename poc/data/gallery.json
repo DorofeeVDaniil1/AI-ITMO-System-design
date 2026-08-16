@@ -1,0 +1,23 @@
+{
+  "cache_age_minutes_default": 5,
+  "employees": [
+    {
+      "employee_id": "emp-4821",
+      "display_name": "demo-allow",
+      "gates_allowed": ["gate-1", "gate-2", "gate-3"],
+      "embedding": [1.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "employee_id": "emp-2201",
+      "display_name": "demo-close-twin",
+      "gates_allowed": ["gate-1", "gate-2", "gate-3"],
+      "embedding": [0.97, 0.24, 0.0, 0.0, 0.0]
+    },
+    {
+      "employee_id": "emp-9100",
+      "display_name": "demo-other",
+      "gates_allowed": ["gate-1", "gate-2", "gate-3"],
+      "embedding": [0.0, 1.0, 0.0, 0.0, 0.0]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "e-1001": {
+    "face_detected": true,
+    "quality_score": 0.88,
+    "liveness_score": 0.95,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.81,
+      "margin": 0.17,
+      "policy_allowed": true
+    },
+    "note": "happy path — clear match to emp-4821"
+  },
+  "e-1002": {
+    "face_detected": true,
+    "quality_score": 0.32,
+    "liveness_score": 0.90,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.79,
+      "margin": 0.20,
+      "policy_allowed": true
+    },
+    "note": "mask + backlight — quality fail → review"
+  },
+  "e-1003": {
+    "face_detected": true,
+    "quality_score": 0.80,
+    "liveness_score": 0.18,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.80,
+      "margin": 0.15,
+      "policy_allowed": true
+    },
+    "note": "phone screen spoof — deny before match matters"
+  },
+  "e-1004": {
+    "face_detected": true,
+    "quality_score": 0.70,
+    "liveness_score": 0.88,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.78,
+      "margin": 0.04,
+      "policy_allowed": true
+    },
+    "note": "two close candidates — small margin → review"
+  },
+  "e-1005": {
+    "face_detected": true,
+    "quality_score": 0.86,
+    "liveness_score": 0.93,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.84,
+      "margin": 0.19,
+      "policy_allowed": true
+    },
+    "note": "good match but offline + stale cache → review"
+  }
+}
