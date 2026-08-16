@@ -17,16 +17,26 @@ from poc.tests.test_smoke import REFERENCE_EVENTS
 
 def main() -> None:
     reset_runtime_state()
-    print(f"{'event':8} {'decision':14} {'cmd':6} {'degraded':8} reasons")
-    print("-" * 72)
+    print(
+        f"{'event':8} {'decision':14} {'cmd':6} {'lat':>5} "
+        f"{'score':>6} {'margin':>6} {'id':10} reasons"
+    )
+    print("-" * 96)
     for event_id in ("e-1001", "e-1002", "e-1003", "e-1004", "e-1005"):
         req = AccessVerifyRequest(**REFERENCE_EVENTS[event_id])
         resp = process_event(req)
+        score = f"{resp.match_score:.3f}" if resp.match_score is not None else "-"
+        margin = (
+            f"{resp.margin_to_second_best:.3f}"
+            if resp.margin_to_second_best is not None
+            else "-"
+        )
         print(
             f"{resp.event_id:8} {resp.decision:14} {resp.turnstile_command:6} "
-            f"{str(resp.degraded_mode):8} {', '.join(resp.reasons)}"
+            f"{resp.latency_ms:5d} {score:>6} {margin:>6} {resp.decision_id:10} "
+            f"{', '.join(resp.reasons)}"
         )
-    print("-" * 72)
+    print("-" * 96)
     print("audit -> poc/data/audit.jsonl")
 
 
