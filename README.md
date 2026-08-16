@@ -20,6 +20,8 @@ pytest poc/tests/test_smoke.py -q
 python scripts/demo.py
 ```
 
+CI то же самое гоняет на GitHub Actions (`.github/workflows/ci.yml`) при push/PR в `main`.
+
 API (опционально):
 
 ```bash
