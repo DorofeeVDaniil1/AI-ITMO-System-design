@@ -20,13 +20,23 @@ pytest poc/tests/test_smoke.py -q
 python scripts/demo.py
 ```
 
-CI то же самое гоняет на GitHub Actions (`.github/workflows/ci.yml`) при push/PR в `main`.
+CI то же самое гоняет на GitHub Actions (`.github/workflows/ci.yml`) при push/PR в `main`.  
+Статус: [![ci](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml/badge.svg)](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml)
 
 API (опционально):
 
 ```bash
 uvicorn poc.app.main:app --reload --port 8000
-# POST http://localhost:8000/v1/access/verify
+```
+
+Примеры запросов:
+
+```bash
+# happy path
+curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: application/json" -d "{\"event_id\":\"e-1001\",\"gate_id\":\"gate-2\",\"camera_id\":\"cam-2a\",\"captured_at\":\"2026-07-31T08:52:14Z\",\"frame_uri\":\"file://demo/frames/e-1001.jpg\",\"metadata\":{\"direction\":\"in\",\"edge_node\":\"edge-gate-2\",\"network\":\"online\"}}"
+
+# offline + stale cache → не open
+curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: application/json" -d "{\"event_id\":\"e-1005\",\"gate_id\":\"gate-1\",\"camera_id\":\"cam-1a\",\"captured_at\":\"2026-07-31T09:11:58Z\",\"frame_uri\":\"file://demo/frames/e-1005.jpg\",\"metadata\":{\"direction\":\"in\",\"edge_node\":\"edge-gate-1\",\"network\":\"offline\",\"cache_age_minutes\":240}}"
 ```
 
 Или: `docker compose up` (проброс `:8000`).
