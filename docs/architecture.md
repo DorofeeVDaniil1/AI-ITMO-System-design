@@ -87,6 +87,19 @@ sequenceDiagram
 
 **Sync, на event_id, бюджет ~1 с p95:** detect → quality → liveness → align/embed → top-k ANN → margin → policy (access + freshness кеша) → turnstile command → локальный audit.
 
+Ориентир разбиения бюджета на слабом edge-GPU (порядок, не обещание железа):
+
+| Стадия | Бюджет p95 |
+|--------|------------|
+| detect + quality | ~80–100 мс |
+| liveness (passive) | ~100–150 мс |
+| embed | ~250–400 мс |
+| ANN / cosine + margin | ~30–80 мс |
+| policy + команда турникету | ~10–20 мс |
+| **запас / джиттер** | остаток до 1 с |
+
+Если p95 летит — смотрю embed и очередь инференса, а не «подкрутить T_allow». В PoC `latency_ms` имитирует такой бюджет без реального sleep, чтобы CI не тормозил.
+
 **Async:** sync audit в центр; fanout шаблонов и политики; приоритетный отзыв; enrollment (фото → шаблон → purge фото); обновление моделей; агрегация метрик; очередь охраны.
 
 ## Хранилища (четыре штуки)
