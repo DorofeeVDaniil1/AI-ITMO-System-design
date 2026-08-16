@@ -154,11 +154,17 @@ def test_e1001_happy_details(client: TestClient):
     assert body["employee_id"] == "emp-4821"
     assert "quality_ok" in body["reasons"]
     assert "liveness_ok" in body["reasons"]
+    assert body["decision_id"].startswith("d-")
+    assert body["audit_id"].startswith("a-")
+    assert 320 <= body["latency_ms"] <= 900
+    assert body["match_score"] == pytest.approx(0.812, abs=1e-6)
 
 
 def test_e1003_spoof_reason(client: TestClient):
     body = client.post("/v1/access/verify", json=REFERENCE_EVENTS["e-1003"]).json()
     assert any("spoof" in r or "liveness" in r for r in body["reasons"])
+    # early exit on spoof → latency still plausible but can be on the lower side
+    assert 320 <= body["latency_ms"] <= 900
 
 
 def test_e1002_quality_reason(client: TestClient):
@@ -169,3 +175,12 @@ def test_e1002_quality_reason(client: TestClient):
 def test_e1004_margin_reason(client: TestClient):
     body = client.post("/v1/access/verify", json=REFERENCE_EVENTS["e-1004"]).json()
     assert "margin_too_small" in body["reasons"]
+
+
+def test_ids_are_sequential(client: TestClient):
+    a = client.post("/v1/access/verify", json=REFERENCE_EVENTS["e-1001"]).json()
+    b = client.post("/v1/access/verify", json=REFERENCE_EVENTS["e-1002"]).json()
+    assert a["decision_id"] == "d-70001"
+    assert a["audit_id"] == "a-70001"
+    assert b["decision_id"] == "d-70002"
+    assert b["audit_id"] == "a-70002"

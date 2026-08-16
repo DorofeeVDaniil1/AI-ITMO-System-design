@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import random
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,10 +15,13 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 GALLERY_PATH = DATA_DIR / "gallery.json"
 EVENTS_PATH = DATA_DIR / "events.json"
 AUDIT_PATH = DATA_DIR / "audit.jsonl"
+MODEL_VERSION = "demo-fixture-v1"
 
 _gallery: Optional[dict[str, Any]] = None
 _event_fixtures: Optional[dict[str, Any]] = None
 _seen_events: dict[str, AccessVerifyResponse] = {}
+_next_decision_n = 70001
+_next_audit_n = 70001
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -41,13 +44,42 @@ def get_event_fixtures() -> dict[str, Any]:
 
 
 def reset_runtime_state() -> None:
-    """For tests: clear idempotency cache, fixtures cache, and audit file."""
-    global _gallery, _event_fixtures
+    """For tests: clear idempotency cache, fixtures cache, counters, audit file."""
+    global _gallery, _event_fixtures, _next_decision_n, _next_audit_n
     _seen_events.clear()
     _gallery = None
     _event_fixtures = None
+    _next_decision_n = 70001
+    _next_audit_n = 70001
     if AUDIT_PATH.exists():
         AUDIT_PATH.unlink()
+
+
+def _next_ids() -> tuple[str, str]:
+    global _next_decision_n, _next_audit_n
+    decision_id = f"d-{_next_decision_n}"
+    audit_id = f"a-{_next_audit_n}"
+    _next_decision_n += 1
+    _next_audit_n += 1
+    return decision_id, audit_id
+
+
+def _demo_latency_ms(event_id: str, wall_ms: int, *, early_exit: bool) -> int:
+    """Plausible edge budget without sleeping (CI stays fast). Seeded by event_id."""
+    rng = random.Random(event_id)
+    # Rough stage costs on a weak edge GPU, ms.
+    detect = rng.randint(35, 55)
+    quality = rng.randint(15, 30)
+    liveness = rng.randint(70, 110)
+    embed = rng.randint(180, 260)
+    match = rng.randint(20, 45)
+    policy = rng.randint(3, 8)
+    if early_exit:
+        stages = detect + quality + liveness
+    else:
+        stages = detect + quality + liveness + embed + match + policy
+    jitter = rng.randint(-25, 40)
+    return max(wall_ms, stages + jitter, 320)
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -91,7 +123,6 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
     fx = fixtures.get(req.event_id)
 
     if fx is None:
-        # Unknown event: fail closed without inventing a face.
         face_detected = False
         quality_score = 0.0
         liveness_score = 0.0
@@ -111,8 +142,6 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
         cache_age = get_gallery().get("cache_age_minutes_default", 5)
     cache_age_f = float(cache_age) if cache_age is not None else None
 
-    # Demo events pin scores so TZ scenarios stay deterministic.
-    # Without override we still do cosine against gallery.json (real match path).
     if match_override is not None:
         match = MatchInfo(
             match_override.get("employee_id"),
@@ -135,9 +164,10 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
         cache_age_minutes=cache_age_f,
     )
 
-    decision_id = f"d-{uuid.uuid4().hex[:8]}"
-    audit_id = f"a-{uuid.uuid4().hex[:8]}"
-    latency_ms = int((time.perf_counter() - t0) * 1000)
+    wall_ms = int((time.perf_counter() - t0) * 1000)
+    early_exit = "quality_below_threshold" in result.reasons or "liveness_spoof_suspected" in result.reasons or "no_face_detected" in result.reasons
+    latency_ms = _demo_latency_ms(req.event_id, wall_ms, early_exit=early_exit)
+    decision_id, audit_id = _next_ids()
 
     response = AccessVerifyResponse(
         event_id=req.event_id,
@@ -173,6 +203,10 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
             "degraded_mode": result.degraded_mode,
             "gate_id": req.gate_id,
             "camera_id": req.camera_id,
+            "network": network,
+            "cache_age_minutes": cache_age_f,
+            "model_version": MODEL_VERSION,
+            "latency_ms": latency_ms,
             # no raw frame on purpose
         }
     )

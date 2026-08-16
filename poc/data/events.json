@@ -1,60 +1,60 @@
 {
   "e-1001": {
     "face_detected": true,
-    "quality_score": 0.88,
-    "liveness_score": 0.95,
+    "quality_score": 0.883,
+    "liveness_score": 0.947,
     "match_override": {
       "employee_id": "emp-4821",
-      "match_score": 0.81,
-      "margin": 0.17,
+      "match_score": 0.812,
+      "margin": 0.168,
       "policy_allowed": true
     },
     "note": "happy path — clear match to emp-4821"
   },
   "e-1002": {
     "face_detected": true,
-    "quality_score": 0.32,
-    "liveness_score": 0.90,
+    "quality_score": 0.318,
+    "liveness_score": 0.902,
     "match_override": {
       "employee_id": "emp-4821",
-      "match_score": 0.79,
-      "margin": 0.20,
+      "match_score": 0.791,
+      "margin": 0.203,
       "policy_allowed": true
     },
     "note": "mask + backlight — quality fail → review"
   },
   "e-1003": {
     "face_detected": true,
-    "quality_score": 0.80,
-    "liveness_score": 0.18,
+    "quality_score": 0.804,
+    "liveness_score": 0.176,
     "match_override": {
       "employee_id": "emp-4821",
-      "match_score": 0.80,
-      "margin": 0.15,
+      "match_score": 0.798,
+      "margin": 0.152,
       "policy_allowed": true
     },
     "note": "phone screen spoof — deny before match matters"
   },
   "e-1004": {
     "face_detected": true,
-    "quality_score": 0.70,
-    "liveness_score": 0.88,
+    "quality_score": 0.706,
+    "liveness_score": 0.879,
     "match_override": {
       "employee_id": "emp-4821",
-      "match_score": 0.78,
-      "margin": 0.04,
+      "match_score": 0.783,
+      "margin": 0.041,
       "policy_allowed": true
     },
     "note": "two close candidates — small margin → review"
   },
   "e-1005": {
     "face_detected": true,
-    "quality_score": 0.86,
-    "liveness_score": 0.93,
+    "quality_score": 0.861,
+    "liveness_score": 0.934,
     "match_override": {
       "employee_id": "emp-4821",
-      "match_score": 0.84,
-      "margin": 0.19,
+      "match_score": 0.837,
+      "margin": 0.191,
       "policy_allowed": true
     },
     "note": "good match but offline + stale cache → review"
