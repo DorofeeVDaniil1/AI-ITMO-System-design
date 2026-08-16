@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Runtime / local
+poc/data/audit.jsonl
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local plans / scratch (not part of the submission)
+face_gate_design_*.plan.md
+.cursor/
+.cursorindexingignore
+/main.py
