@@ -84,6 +84,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: applica
 ## Документация
 
 - [docs/architecture.md](docs/architecture.md) — edge-first hybrid, потоки, хранилища
+- [docs/scenarios.md](docs/scenarios.md) — разбор пяти событий ТЗ (e-1001…e-1005)
 - [docs/ml.md](docs/ml.md) — пайплайн, пороги, validation, почему не LLM
 - [docs/monitoring.md](docs/monitoring.md) — метрики и алерты
 - [docs/product.md](docs/product.md) — ценность, гипотезы, эффект, пилот
