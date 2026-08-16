@@ -86,6 +86,34 @@ REFERENCE_EVENTS = {
             "note": "сотрудник уволен вчера, отзыв доступа мог не доехать до edge-кеша",
         },
     },
+    "e-1006": {
+        "event_id": "e-1006",
+        "gate_id": "gate-1",
+        "camera_id": "cam-1a",
+        "captured_at": "2026-07-31T09:14:10Z",
+        "frame_uri": "file://demo/frames/e-1006.jpg",
+        "metadata": {
+            "direction": "in",
+            "illumination": "normal",
+            "edge_node": "edge-gate-1",
+            "network": "online",
+            "note": "лицо в кадре не найдено",
+        },
+    },
+    "e-1007": {
+        "event_id": "e-1007",
+        "gate_id": "gate-2",
+        "camera_id": "cam-2a",
+        "captured_at": "2026-07-31T09:16:40Z",
+        "frame_uri": "file://demo/frames/e-1007.jpg",
+        "metadata": {
+            "direction": "in",
+            "illumination": "normal",
+            "edge_node": "edge-gate-2",
+            "network": "online",
+            "note": "сомнительный liveness, не явный spoof",
+        },
+    },
 }
 
 EXPECTED = {

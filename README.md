@@ -1,14 +1,15 @@
-# Face Gate — системный дизайн проходной
+# Face Gate
+AI ITMO кейс. 
 
-Кейс: CV/ML-проход по лицу на офисном кампусе. Документация — основная часть. PoC маленький: показывает, что **allow** открывает турникет, а серая зона / spoof / stale cache — **нет**, с причиной в audit.
+Это система прохода на офисный кампус по лицу. У турникета стоит свой узел: он смотрит кадр, проверяет, что лицо живое и кадр нормальный, ищет человека в базе и только потом решает, открывать или нет. Открываем только когда уверены (`allow`). Если кадр плохой, похоже на подделку, совпадение по лицу не 100% или локальная база шаблонов устарела — человека не пускаем автоматически (`manual_review` или `deny`), а решение пишем в журнал.
 
 ## Зачем бизнесу
 
-Утром очередь съедает минуты сотрудников (в ТЗ — порядка 90 с ожидания в пике при 10 ₽/мин). Охрана тратит время на забытые карты. Карту можно передать — лицо это не лечит само по себе, но убирает типовой «приложил чужой пропуск» как единственный фактор. Авто-открытие только при уверенном матче; иначе охрана. False accept дороже ложного отказа — это заложено в пороги и kill-switch пилота. Цифры эффекта — в [docs/product.md](docs/product.md).
+Утром в пик люди стоят в очереди около 90 секунд (в задании минута стоит 10 ₽), а забытая или нечитаемая карта уводит сотрудника к охране примерно на 4 минуты. Карту можно передать другому человеку — обычный пропуск этого не ловит. Система должна быстрее закрывать типовые проходы по лицу и разгружать охрану от однотипных кейсов, не открывая турникет чужому: false accept дороже ложного отказа. Ценность — меньше потерянного времени в пике и меньше ручных разборов при нуле подтверждённых false accept на пилоте. Подробный расчёт расписал — в [docs/product.md](docs/product.md).
 
-## Быстрый старт
+## Как запустить PoC
 
-Python 3.11+ (проверял на 3.14 в локальном venv — ок).
+Python 3.11+ (проверял на 3.14).
 
 ```bash
 python -m venv .venv
@@ -20,82 +21,73 @@ pytest poc/tests/test_smoke.py -q
 python scripts/demo.py
 ```
 
-CI то же самое гоняет на GitHub Actions (`.github/workflows/ci.yml`) при push/PR в `main`.  
-Статус: [![ci](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml/badge.svg)](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml)
+`demo.py` печатает решения по пяти событиям без сервера. Audit пишется в `poc/data/audit.jsonl` (файл в `.gitignore`).
 
-API (опционально):
+Опционально API: `uvicorn poc.app.main:app --reload --port 8000` или `docker compose up`.  
+Потом открой `http://127.0.0.1:8000/ui/guard` и нажми **«Загрузить рисковые события»** — иначе очередь пустая.  
+`python scripts/demo.py` крутится отдельно и эту страницу не наполняет (другой процесс, своя память).  
+CI: [![ci](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml/badge.svg)](https://github.com/DorofeeVDaniil1/AI-ITMO-System-design/actions/workflows/ci.yml)
 
-```bash
-uvicorn poc.app.main:app --reload --port 8000
-```
+## Сценарии
 
-Примеры запросов:
+Пять событий из задания плюс два доп. кейса для сценария №7 — всё через `POST /v1/access/verify`:
 
-```bash
-# happy path
-curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: application/json" -d "{\"event_id\":\"e-1001\",\"gate_id\":\"gate-2\",\"camera_id\":\"cam-2a\",\"captured_at\":\"2026-07-31T08:52:14Z\",\"frame_uri\":\"file://demo/frames/e-1001.jpg\",\"metadata\":{\"direction\":\"in\",\"edge_node\":\"edge-gate-2\",\"network\":\"online\"}}"
+| Событие | Результат |
+|---------|-----------|
+| e-1001 | уверенный матч → `allow` + `open` |
+| e-1002 | плохое качество → `manual_review`, в очередь охраны |
+| e-1003 | spoof → `deny` (тоже без open) |
+| e-1004 | малый margin → `manual_review`, в очередь охраны |
+| e-1005 | offline + старый кеш → `manual_review` + `degraded_mode` |
+| e-1006 | лицо не найдено → `manual_review` |
+| e-1007 | сомнительный liveness → `manual_review` |
 
-# offline + stale cache → не open
-curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: application/json" -d "{\"event_id\":\"e-1005\",\"gate_id\":\"gate-1\",\"camera_id\":\"cam-1a\",\"captured_at\":\"2026-07-31T09:11:58Z\",\"frame_uri\":\"file://demo/frames/e-1005.jpg\",\"metadata\":{\"direction\":\"in\",\"edge_node\":\"edge-gate-1\",\"network\":\"offline\",\"cache_age_minutes\":240}}"
-```
+### Сценарий №7 (обязательный): риск → охрана, без авто-open
 
-Или: `docker compose up` (проброс `:8000`).
+Если лицо не найдено, качество низкое, liveness сомнительный, отрыв от второго кандидата маленький или режим offline/stale cache — турникет **не** открывается. Событие уходит в очередь охраны, причина видна:
 
-## Что демонстрирует PoC
+- в ответе API (`reasons`);
+- в `poc/data/audit.jsonl`;
+- на простой странице `http://127.0.0.1:8000/ui/guard` (после `uvicorn`).
 
-Пять событий из ТЗ:
+Проверка: `pytest poc/tests/test_scenario7.py -q` или `python scripts/demo.py`.
 
-| event | ожидание |
-|-------|----------|
-| e-1001 | `allow` + `open` |
-| e-1002 | quality → `manual_review`, не open |
-| e-1003 | spoof → `deny`, не open |
-| e-1004 | малый margin → `manual_review`, не open |
-| e-1005 | offline + stale cache → `manual_review` + `degraded_mode` |
+**Зачем страница охраны и `POST /v1/guard/review/...`**  
+В ТЗ этого API нет. Для сценария №7 хватает трёх вещей: турникет не открылся, событие ушло на ручную проверку, причина есть в логе или на экране. Основной метод из задания — `POST /v1/access/verify`.
 
-Контракт: `POST /v1/access/verify` как в задании. Audit: `poc/data/audit.jsonl` (в `.gitignore`, появляется после прогона).
+Очередь, простую HTML-страницу и кнопку «охрана решила» я добавил сам. Так проще показать: рискованный кейс не открывает турникет сам, а дальше человек на посту может открыть или отказать. Это удобство для демо, а не обязательный пункт сдачи.
 
-### Prod-shaped API (не полный прод)
+**Что упрощено в PoC и чем заменяется в целевой архитектуре**
 
-Поверх policy добавлены куски «как на edge», всё ещё без реальных моделей и железа:
+| В PoC сейчас | В целевой системе |
+|--------------|-------------------|
+| Scores и «лицо найдено» из `events.json` (mock) | SCRFD/RetinaFace, quality-гейты, passive PAD, ArcFace/InsightFace |
+| Gallery из трёх demo-эмбеддингов + cosine | Большая база + ANN на edge |
+| Очередь = JSON API + HTML-таблица | Консоль охраны с crop, таймерами и кнопками open/deny |
+| Турникет = симулятор ack | SDK турникета |
+| Причины в тексте лога | То же в audit + UI, плюс алерт на явный spoof |
 
-| Метод | Зачем |
-|-------|--------|
-| `POST /v1/admin/revoke` | снять сотрудника с локального кеша шаблонов (модель отзыва) |
-| `GET /v1/guard/queue` | очередь manual_review |
-| `POST /v1/guard/review/{event_id}` | охрана: `open` / `deny` + ack турникета |
-| `GET /metrics` | счётчики решений / open / revoke |
+Разбор по шагам: [docs/scenarios.md](docs/scenarios.md).
 
-Симулятор турникета: одно `open` на `event_id`, повтор — `duplicate`. Это ближе к прод-контракту, чем строка в JSON без ack.
+## Реализация и описание кода
 
-## Real vs mock
+**Реализовано в PoC:** FastAPI + Pydantic (`fastapi`, `uvicorn`, `pydantic`, `numpy`, `pytest`, `httpx`). Правила трёх исходов и fail-closed — `poc/app/decision.py`. Пайплайн запроса, идемпотентность по `event_id`, audit в JSONL — `pipeline.py`. Простой cosine top-2 по маленькой gallery. Симулятор турникета, revoke, очередь охраны, страница `/ui/guard` с причинами, `/metrics`.
 
-| Часть | В PoC | В целевой архитектуре |
-|-------|-------|------------------------|
-| Policy / 3 исхода / fail-closed | **реально**, `decision.py` | то же на edge |
-| Cosine top-2 | есть код | + HNSW на больших базах |
-| Quality / liveness / match scores | **fixture** в `events.json` | SCRFD, PAD, ArcFace |
-| Турникет | поле в JSON | SDK + ack |
-| Охрана | reasons в логе | очередь оператора |
-| Кадры | `file://demo/...`, без реальных лиц | RTSP |
+**Только архитектурный дизайн (в docs, в коде нет):** детекция SCRFD/RetinaFace, alignment + эмбеддинг ArcFace/InsightFace, passive PAD (anti-spoof), ANN-поиск (HNSW/Faiss) на больших базах, RTSP с камеры, железо турникета, полноценная консоль охраны, центральный SoT шаблонов и fanout отзыва в проде.
 
-Подробности: [docs/architecture.md](docs/architecture.md), [docs/ml.md](docs/ml.md).
+**Mock в PoC:** quality / liveness / match scores и флаг «лицо найдено» — фикстуры `poc/data/events.json` и `gallery.json`; кадры — пути `file://demo/...` без реальных лиц; турникет и охрана — JSON/API + простая HTML-таблица.
 
-## Документация
+## Допущения и ограничения MVP
 
-- [docs/architecture.md](docs/architecture.md) — edge-first hybrid, потоки, хранилища
-- [docs/scenarios.md](docs/scenarios.md) — разбор пяти событий ТЗ (e-1001…e-1005)
-- [docs/ml.md](docs/ml.md) — пайплайн, пороги, validation, почему не LLM
-- [docs/monitoring.md](docs/monitoring.md) — метрики и алерты
-- [docs/product.md](docs/product.md) — ценность, гипотезы, эффект, пилот
-- [docs/risks-and-ops.md](docs/risks-and-ops.md) — latency/offline и privacy
-- [AI_USAGE.md](AI_USAGE.md) · [WORKLOG.md](WORKLOG.md) · [SELF_REVIEW.md](SELF_REVIEW.md)
+- False accept считаю дороже ложного отказа: при подтверждённом FA останавливаем авто-открытие (конкретную сумму в рублях не фиксирую — нет данных из ТЗ).
+- MVP: одна проходная, режимы shadow → assist, карта как fallback; гости и tailgating вне скоупа.
+- PoC не измеряет FAR/FRR на реальных лицах и не гоняет CV-модели.
+- Нет юридического контура согласия в коде, нет HSM/боевого хранения шаблонов, нет нагрузочного прогона 20 проходов/мин на железе кампуса.
 
-## Допущения и дыры MVP
+## Риски, не закрытые в MVP
 
-- Цена FA = 250 000 ₽/инцидент (assumption).
-- PoC не меряет FAR/FRR и не гоняет реальные модели.
-- Нет железа турникета, нет UI охраны, нет юридического контура согласия в коде.
-- Invite проверяющему (`aitalenthub-study` и т.п.) — на стороне сдающего.
+Пока не проверял защиту от фото и видео с экрана на реальных камерах и при нашем освещении — в PoC это заглушка. Нет готового процесса согласия сотрудников и работы с HR: в документах написано, что нужно, в жизни не отработано. Если слишком много людей будет уходить на ручной разбор, охрана может оказаться загруженнее, чем сейчас с забытыми картами. Если несколько проходных долго без сети, не доказано, что отзыв доступа (например после увольнения) везде доедет вовремя — в дизайне это описано, в коде не закрыто. Отдельно остаются юридические и security-вопросы по биометрии: без нормального правового и security review в прод такое не выкатываю.
 
-Перед продом: согласие и процессы, реальный PAD/FR на камерах кампуса, калибровка порогов по identity-split, kill-switch и мониторинг из docs.
+## Документы
+
+[architecture](docs/architecture.md) · [ml](docs/ml.md) · [monitoring](docs/monitoring.md) · [product](docs/product.md) · [risks](docs/risks-and-ops.md) · [scenarios](docs/scenarios.md) · [AI_USAGE](AI_USAGE.md) · [WORKLOG](WORKLOG.md) · [SELF_REVIEW](SELF_REVIEW.md)

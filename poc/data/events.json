@@ -58,5 +58,24 @@
       "policy_allowed": true
     },
     "note": "good match but offline + stale cache → review"
+  },
+  "e-1006": {
+    "face_detected": false,
+    "quality_score": 0.0,
+    "liveness_score": 0.0,
+    "match_override": null,
+    "note": "сценарий 7 — лицо не найдено → review, без open"
+  },
+  "e-1007": {
+    "face_detected": true,
+    "quality_score": 0.790,
+    "liveness_score": 0.62,
+    "match_override": {
+      "employee_id": "emp-4821",
+      "match_score": 0.805,
+      "margin": 0.155,
+      "policy_allowed": true
+    },
+    "note": "сценарий 7 — сомнительный liveness (не spoof) → review"
   }
 }
