@@ -184,3 +184,24 @@ def test_ids_are_sequential(client: TestClient):
     assert a["audit_id"] == "a-70001"
     assert b["decision_id"] == "d-70002"
     assert b["audit_id"] == "a-70002"
+
+
+def test_unknown_event_fail_closed(client: TestClient):
+    payload = {
+        "event_id": "e-unknown",
+        "gate_id": "gate-1",
+        "camera_id": "cam-1a",
+        "captured_at": "2026-07-31T09:00:00Z",
+        "frame_uri": "file://demo/frames/missing.jpg",
+        "metadata": {"network": "online", "edge_node": "edge-gate-1"},
+    }
+    body = client.post("/v1/access/verify", json=payload).json()
+    assert body["decision"] == "manual_review"
+    assert body["turnstile_command"] != "open"
+    assert "no_face_detected" in body["reasons"]
+
+
+def test_health_exposes_model_version(client: TestClient):
+    body = client.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["model_version"] == "demo-fixture-v1"
