@@ -1,26 +1,40 @@
+"""
+decision.py — чистое правило allow / deny / manual_review.
+
+Сюда НЕ ходят нейросети. На вход уже готовые scores (quality, liveness, match).
+Задача модуля: применить пороги и fail-closed логику как на edge-policy.
+
+Порядок гейтов важен: сначала качество и liveness, потом матч/margin,
+потом policy, в конце свежесть кеша (даже хороший match при stale → review).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
 
-# Named thresholds — same idea as production policy, values are demo-calibrated.
-T_ALLOW = 0.75
-M_MIN = 0.12
-Q_MIN = 0.55
-L_ALLOW = 0.80
-L_SPOOF = 0.35
-CACHE_STALE_MINUTES = 120
+# Пороги как именованные константы — в проде калибруются на holdout по identity.
+T_ALLOW = 0.75  # минимальный score top-1 для авто-открытия
+M_MIN = 0.12  # минимальный отрыв top-1 от top-2 (иначе «два кандидата»)
+Q_MIN = 0.55  # ниже — кадр слишком плохой, allow нельзя
+L_ALLOW = 0.80  # liveness достаточно «живой» для allow
+L_SPOOF = 0.35  # ниже/равно — считаем spoof → deny (не review)
+CACHE_STALE_MINUTES = 120  # старше — кеш шаблонов/policy не доверяем для auto-open
 
 
 @dataclass
 class MatchInfo:
+    """Результат 1:N поиска: кто ближе и насколько оторвался от второго."""
+
     employee_id: Optional[str]
     match_score: Optional[float]
-    margin: Optional[float]
+    margin: Optional[float]  # score_1 - score_2
 
 
 @dataclass
 class DecisionResult:
+    """Итог policy: решение, команда турникету, причины для audit."""
+
     decision: str
     turnstile_command: str
     requires_human_review: bool
@@ -41,7 +55,14 @@ def decide(
     network: str,
     cache_age_minutes: Optional[float],
 ) -> DecisionResult:
+    """
+    Главная функция политики.
+
+    allow только если ВСЕ гейты зелёные.
+    Иначе hold: manual_review (серая зона) или deny (явный spoof / policy).
+    """
     reasons: list[str] = []
+    # degraded = работаем не в «полном» режиме доверия к кешу/сети
     degraded = network == "offline" or (
         cache_age_minutes is not None and cache_age_minutes > CACHE_STALE_MINUTES
     )
@@ -64,6 +85,7 @@ def decide(
         )
     reasons.append("quality_ok")
 
+    # Явный spoof жёстче, чем «сомнительный» liveness
     if liveness_score <= L_SPOOF:
         reasons.append("liveness_spoof_suspected")
         return _review_or_deny(
@@ -123,6 +145,7 @@ def decide(
         )
     reasons.append("policy_ok")
 
+    # Важно: даже идеальный match при stale/offline → review (отзыв мог не доехать)
     if degraded:
         reasons.append("stale_or_offline_cache")
         return DecisionResult(
@@ -155,6 +178,7 @@ def _review_or_deny(
     degraded: bool,
     match: MatchInfo,
 ) -> DecisionResult:
+    """Любой не-allow путь: турникет hold, review только если decision=manual_review."""
     return DecisionResult(
         decision=decision,
         turnstile_command="hold",

@@ -1,3 +1,10 @@
+"""
+test_smoke.py — обязательные проверки по ТЗ.
+
+REFERENCE_EVENTS — те же JSON, что в задании (e-1001…e-1005).
+Проверяем: happy open, risky/spoof/offline не open, audit, идемпотентность.
+"""
+
 from __future__ import annotations
 
 import json

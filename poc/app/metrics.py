@@ -1,3 +1,10 @@
+"""
+metrics.py — простые счётчики в процессе.
+
+В проде обычно Prometheus/OpenTelemetry. Здесь dict + lock, чтобы
+на защите показать «что считаем»: allow/deny/review, open, revoke.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,8 +14,6 @@ from typing import Any
 
 @dataclass
 class MetricsRegistry:
-    """In-process counters — prod would be Prometheus; shape is the same idea."""
-
     decisions: dict[str, int] = field(default_factory=dict)
     turnstile_open_ok: int = 0
     turnstile_open_dup: int = 0

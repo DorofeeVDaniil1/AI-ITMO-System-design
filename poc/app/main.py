@@ -1,3 +1,15 @@
+"""
+main.py — HTTP API (FastAPI).
+
+Эндпоинты:
+  GET  /health              — жив ли сервис + версии
+  GET  /metrics             — простые счётчики (вместо Prometheus на демо)
+  POST /v1/access/verify    — главный контракт ТЗ
+  POST /v1/admin/revoke     — снять шаблон с edge-кеша
+  GET  /v1/guard/queue      — очередь manual_review
+  POST /v1/guard/review/{id}— решение охраны open/deny
+"""
+
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
@@ -24,6 +36,7 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict[str, object]:
+    """Проверка живости + какая «модель»/policy сейчас на узле."""
     return {
         "status": "ok",
         "model_version": MODEL_VERSION,
@@ -33,6 +46,7 @@ def health() -> dict[str, object]:
 
 @app.get("/metrics")
 def get_metrics() -> dict[str, object]:
+    """Счётчики для демо-наблюдаемости (в проде — Prometheus)."""
     snap = metrics.snapshot()
     snap["policy_version"] = gallery_store.policy_version
     snap["guard_queue_open"] = len(guard_queue.list_open())
@@ -41,11 +55,16 @@ def get_metrics() -> dict[str, object]:
 
 @app.post("/v1/access/verify", response_model=AccessVerifyResponse)
 def verify_access(body: AccessVerifyRequest) -> AccessVerifyResponse:
+    """Кадр/событие → решение → команда турникету."""
     return process_event(body)
 
 
 @app.post("/v1/admin/revoke", response_model=RevokeResponse)
 def revoke_access(body: RevokeRequest) -> RevokeResponse:
+    """
+    Модель приоритетного отзыва с центра на edge:
+    шаблон пропадает из локального кеша, policy_version растёт.
+    """
     revoked = gallery_store.revoke(body.employee_id)
     if revoked:
         metrics.revocations += 1
@@ -58,11 +77,13 @@ def revoke_access(body: RevokeRequest) -> RevokeResponse:
 
 @app.get("/v1/guard/queue")
 def guard_queue_list() -> dict[str, object]:
+    """Что сейчас ждёт ручной разбор (вместо UI охраны)."""
     return {"items": guard_queue.list_open()}
 
 
 @app.post("/v1/guard/review/{event_id}", response_model=GuardResolveResponse)
 def guard_resolve(event_id: str, body: GuardResolveRequest) -> GuardResolveResponse:
+    """Охранник подтвердил open или окончательный deny — пишем audit + турникет."""
     item = guard_queue.resolve(
         event_id, action=body.action, operator_id=body.operator_id
     )
@@ -77,17 +98,14 @@ def guard_resolve(event_id: str, body: GuardResolveRequest) -> GuardResolveRespo
         audit_id=item.get("audit_id", "a-unknown"),
     )
 
-    turnstile_status = None
     if body.action == "open":
         ack = turnstile.apply(event_id=event_id, command="open")
-        turnstile_status = ack.status
     else:
         ack = turnstile.apply(event_id=event_id, command="hold")
-        turnstile_status = ack.status
 
     return GuardResolveResponse(
         event_id=event_id,
         status="resolved",
         operator_action=body.action,
-        turnstile_status=turnstile_status,
+        turnstile_status=ack.status,
     )

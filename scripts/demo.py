@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Run the five TZ reference events through the decision pipeline (no server)."""
+"""
+demo.py — прогон пяти событий ТЗ без поднятия HTTP-сервера.
+
+Удобно для проверяющего: python scripts/demo.py
+Пишет таблицу decision/cmd/latency/scores и наполняет poc/data/audit.jsonl.
+"""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+# Чтобы импорты poc.* работали при запуске из корня репо
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

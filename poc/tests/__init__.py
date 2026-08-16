@@ -1,1 +1,1 @@
-# tests package
+# Тесты PoC: smoke по ТЗ + prod-shaped обвязка.

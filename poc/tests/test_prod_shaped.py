@@ -1,4 +1,8 @@
-"""Prod-shaped edge pieces: turnstile ack, revoke, guard queue."""
+"""
+test_prod_shaped.py — слой «ближе к edge», не замена smoke по ТЗ.
+
+Турникет ack, revoke шаблона, очередь охраны, /metrics.
+"""
 
 from __future__ import annotations
 

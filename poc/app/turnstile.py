@@ -1,14 +1,25 @@
+"""
+turnstile.py — симулятор турникета.
+
+В проде здесь SDK железа: отправить open, дождаться ack, защита от replay.
+Здесь моделируем только:
+  - hold → барьер закрыт;
+  - open один раз на event_id;
+  - повторный open того же event_id → duplicate (не открываем дважды).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import Lock
-from typing import Optional
 
 from poc.app.metrics import metrics
 
 
 @dataclass
 class TurnstileAck:
+    """Ответ «железа»: приняли команду или нет."""
+
     accepted: bool
     status: str  # opened | duplicate | held | rejected
     event_id: str
@@ -16,14 +27,8 @@ class TurnstileAck:
 
 
 class TurnstileSimulator:
-    """
-    Stand-in for a real turnstile SDK.
-    Prod would: send command over serial/IP, wait ack, protect against replay.
-    Here we only model ack + one-open-per-event_id.
-    """
-
     def __init__(self) -> None:
-        self._opened: set[str] = set()
+        self._opened: set[str] = set()  # event_id, по которым уже был успешный open
         self._lock = Lock()
 
     def reset(self) -> None:
@@ -69,4 +74,5 @@ class TurnstileSimulator:
             return event_id in self._opened
 
 
+# Один синглтон на процесс PoC (как один контроллер на проходной)
 turnstile = TurnstileSimulator()

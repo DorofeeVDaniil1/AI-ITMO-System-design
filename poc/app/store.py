@@ -1,3 +1,12 @@
+"""
+store.py — локальное состояние edge-узла в памяти.
+
+GalleryStore  — кеш шаблонов + policy_version (отзыв = удалить employee + bump версии).
+GuardQueue    — события, ушедшие в manual_review, пока охрана не решила.
+
+В проде: реплика ANN/шаблонов с центра, очередь в БД, UI охраны.
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,10 +20,7 @@ GALLERY_PATH = DATA_DIR / "gallery.json"
 
 
 class GalleryStore:
-    """
-    Edge cache stand-in: templates + per-gate policy.
-    revoke() models a priority delta from central SoT.
-    """
+    """Локальная gallery.json + возможность revoke без правки файла на диске в рантайме."""
 
     def __init__(self, path: Path = GALLERY_PATH) -> None:
         self._path = path
@@ -24,6 +30,7 @@ class GalleryStore:
         self.cache_age_minutes_override: Optional[float] = None
 
     def reset(self) -> None:
+        """Вернуть gallery к файлу на диске (для тестов)."""
         with self._lock:
             self._data = None
             self.policy_version = 1
@@ -50,7 +57,7 @@ class GalleryStore:
             return float(self._load().get("cache_age_minutes_default", 5))
 
     def revoke(self, employee_id: str) -> bool:
-        """Remove template from local cache and bump policy version."""
+        """Убрать biometric template с edge. Возвращает True, если кого-то сняли."""
         with self._lock:
             data = self._load()
             before = len(data["employees"])
@@ -71,7 +78,7 @@ gallery_store = GalleryStore()
 
 
 class GuardQueue:
-    """Events waiting for human review — prod would be a real console + DB."""
+    """Очередь ручных проверок: status=open → ждёт оператора."""
 
     def __init__(self) -> None:
         self._items: dict[str, dict[str, Any]] = {}
