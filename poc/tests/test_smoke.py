@@ -205,3 +205,4 @@ def test_health_exposes_model_version(client: TestClient):
     body = client.get("/health").json()
     assert body["status"] == "ok"
     assert body["model_version"] == "demo-fixture-v1"
+    assert "policy_version" in body

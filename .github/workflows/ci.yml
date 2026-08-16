@@ -22,7 +22,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Smoke tests
-        run: pytest poc/tests/test_smoke.py -q
+        run: pytest poc/tests -q
 
       - name: Demo script
         run: python scripts/demo.py

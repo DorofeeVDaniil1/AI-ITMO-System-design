@@ -38,3 +38,29 @@ class AccessVerifyResponse(BaseModel):
     degraded_mode: bool
     audit_id: str
     latency_ms: int
+    # prod-shaped extras (optional for TZ compatibility)
+    turnstile_status: Optional[str] = None
+    policy_version: Optional[int] = None
+
+
+class RevokeRequest(BaseModel):
+    employee_id: str
+    reason: str = "access_revoked"
+
+
+class RevokeResponse(BaseModel):
+    employee_id: str
+    revoked: bool
+    policy_version: int
+
+
+class GuardResolveRequest(BaseModel):
+    action: Literal["open", "deny"]
+    operator_id: str = "guard-1"
+
+
+class GuardResolveResponse(BaseModel):
+    event_id: str
+    status: str
+    operator_action: str
+    turnstile_status: Optional[str] = None

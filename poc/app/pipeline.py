@@ -9,15 +9,16 @@ from typing import Any, Optional
 import numpy as np
 
 from poc.app.decision import MatchInfo, decide
+from poc.app.metrics import metrics
 from poc.app.models import AccessVerifyRequest, AccessVerifyResponse, QualityBlock
+from poc.app.store import gallery_store, guard_queue
+from poc.app.turnstile import turnstile
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-GALLERY_PATH = DATA_DIR / "gallery.json"
 EVENTS_PATH = DATA_DIR / "events.json"
 AUDIT_PATH = DATA_DIR / "audit.jsonl"
 MODEL_VERSION = "demo-fixture-v1"
 
-_gallery: Optional[dict[str, Any]] = None
 _event_fixtures: Optional[dict[str, Any]] = None
 _seen_events: dict[str, AccessVerifyResponse] = {}
 _next_decision_n = 70001
@@ -29,13 +30,6 @@ def _load_json(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def get_gallery() -> dict[str, Any]:
-    global _gallery
-    if _gallery is None:
-        _gallery = _load_json(GALLERY_PATH)
-    return _gallery
-
-
 def get_event_fixtures() -> dict[str, Any]:
     global _event_fixtures
     if _event_fixtures is None:
@@ -44,13 +38,16 @@ def get_event_fixtures() -> dict[str, Any]:
 
 
 def reset_runtime_state() -> None:
-    """For tests: clear idempotency cache, fixtures cache, counters, audit file."""
-    global _gallery, _event_fixtures, _next_decision_n, _next_audit_n
+    """For tests: clear runtime caches and side-effect stores."""
+    global _event_fixtures, _next_decision_n, _next_audit_n
     _seen_events.clear()
-    _gallery = None
     _event_fixtures = None
     _next_decision_n = 70001
     _next_audit_n = 70001
+    gallery_store.reset()
+    turnstile.reset()
+    guard_queue.reset()
+    metrics.reset()
     if AUDIT_PATH.exists():
         AUDIT_PATH.unlink()
 
@@ -65,9 +62,7 @@ def _next_ids() -> tuple[str, str]:
 
 
 def _demo_latency_ms(event_id: str, wall_ms: int, *, early_exit: bool) -> int:
-    """Plausible edge budget without sleeping (CI stays fast). Seeded by event_id."""
     rng = random.Random(event_id)
-    # Rough stage costs on a weak edge GPU, ms.
     detect = rng.randint(35, 55)
     quality = rng.randint(15, 30)
     liveness = rng.randint(70, 110)
@@ -90,11 +85,16 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
+def _employee_enrolled(employee_id: Optional[str]) -> bool:
+    if not employee_id:
+        return False
+    return any(e["employee_id"] == employee_id for e in gallery_store.employees())
+
+
 def _match_gallery(probe: list[float], gate_id: str) -> tuple[MatchInfo, bool]:
-    gallery = get_gallery()
     scores: list[tuple[str, float, bool]] = []
     probe_v = np.asarray(probe, dtype=float)
-    for emp in gallery["employees"]:
+    for emp in gallery_store.employees():
         emb = np.asarray(emp["embedding"], dtype=float)
         score = _cosine(probe_v, emb)
         allowed = gate_id in emp.get("gates_allowed", [])
@@ -139,16 +139,18 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
     network = str(meta.get("network", "online"))
     cache_age = meta.get("cache_age_minutes")
     if cache_age is None:
-        cache_age = get_gallery().get("cache_age_minutes_default", 5)
+        cache_age = gallery_store.default_cache_age()
     cache_age_f = float(cache_age) if cache_age is not None else None
 
     if match_override is not None:
+        emp_id = match_override.get("employee_id")
+        enrolled = _employee_enrolled(emp_id)
         match = MatchInfo(
-            match_override.get("employee_id"),
-            float(match_override["match_score"]),
-            float(match_override["margin"]),
+            emp_id if enrolled else None,
+            float(match_override["match_score"]) if enrolled else None,
+            float(match_override["margin"]) if enrolled else None,
         )
-        policy_allowed = bool(match_override.get("policy_allowed", True))
+        policy_allowed = bool(match_override.get("policy_allowed", True)) and enrolled
     elif probe is not None and face_detected:
         match, policy_allowed = _match_gallery(probe, req.gate_id)
     else:
@@ -165,9 +167,31 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
     )
 
     wall_ms = int((time.perf_counter() - t0) * 1000)
-    early_exit = "quality_below_threshold" in result.reasons or "liveness_spoof_suspected" in result.reasons or "no_face_detected" in result.reasons
+    early_exit = (
+        "quality_below_threshold" in result.reasons
+        or "liveness_spoof_suspected" in result.reasons
+        or "no_face_detected" in result.reasons
+    )
     latency_ms = _demo_latency_ms(req.event_id, wall_ms, early_exit=early_exit)
     decision_id, audit_id = _next_ids()
+
+    ack = turnstile.apply(event_id=req.event_id, command=result.turnstile_command)
+    metrics.inc_decision(result.decision)
+
+    if result.requires_human_review:
+        guard_queue.enqueue(
+            req.event_id,
+            {
+                "event_id": req.event_id,
+                "decision_id": decision_id,
+                "audit_id": audit_id,
+                "gate_id": req.gate_id,
+                "camera_id": req.camera_id,
+                "reasons": result.reasons,
+                "employee_id": result.employee_id,
+                "status": "open",
+            },
+        )
 
     response = AccessVerifyResponse(
         event_id=req.event_id,
@@ -187,6 +211,8 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
         degraded_mode=result.degraded_mode,
         audit_id=audit_id,
         latency_ms=latency_ms,
+        turnstile_status=ack.status,
+        policy_version=gallery_store.policy_version,
     )
 
     _append_audit(
@@ -196,6 +222,11 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
             "decision_id": decision_id,
             "decision": result.decision,
             "turnstile_command": result.turnstile_command,
+            "turnstile_ack": {
+                "accepted": ack.accepted,
+                "status": ack.status,
+                "detail": ack.detail,
+            },
             "employee_id": result.employee_id,
             "match_score": result.match_score,
             "margin_to_second_best": result.margin_to_second_best,
@@ -206,10 +237,29 @@ def process_event(req: AccessVerifyRequest) -> AccessVerifyResponse:
             "network": network,
             "cache_age_minutes": cache_age_f,
             "model_version": MODEL_VERSION,
+            "policy_version": gallery_store.policy_version,
             "latency_ms": latency_ms,
-            # no raw frame on purpose
         }
     )
 
     _seen_events[req.event_id] = response
     return response
+
+
+def append_operator_audit(
+    *,
+    event_id: str,
+    action: str,
+    operator_id: str,
+    audit_id: str,
+) -> None:
+    _append_audit(
+        {
+            "audit_id": f"{audit_id}-op",
+            "event_id": event_id,
+            "type": "operator_action",
+            "operator_id": operator_id,
+            "operator_action": action,
+            "policy_version": gallery_store.policy_version,
+        }
+    )

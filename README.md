@@ -55,6 +55,19 @@ curl -s -X POST http://127.0.0.1:8000/v1/access/verify -H "Content-Type: applica
 
 Контракт: `POST /v1/access/verify` как в задании. Audit: `poc/data/audit.jsonl` (в `.gitignore`, появляется после прогона).
 
+### Prod-shaped API (не полный прод)
+
+Поверх policy добавлены куски «как на edge», всё ещё без реальных моделей и железа:
+
+| Метод | Зачем |
+|-------|--------|
+| `POST /v1/admin/revoke` | снять сотрудника с локального кеша шаблонов (модель отзыва) |
+| `GET /v1/guard/queue` | очередь manual_review |
+| `POST /v1/guard/review/{event_id}` | охрана: `open` / `deny` + ack турникета |
+| `GET /metrics` | счётчики решений / open / revoke |
+
+Симулятор турникета: одно `open` на `event_id`, повтор — `duplicate`. Это ближе к прод-контракту, чем строка в JSON без ack.
+
 ## Real vs mock
 
 | Часть | В PoC | В целевой архитектуре |
